@@ -259,7 +259,8 @@ func limit(_ kind: String = UsageLimit.sessionKind, percent: Double, resetsIn: T
 
     func present(_ limits: [UsageLimit], mode: MenuBarMode = .auto, stale: Bool = false) -> MenuBarPresentation {
         let p = Dictionary(uniqueKeysWithValues: limits.map { ($0.kind, Projector.project($0, samples: [], now: t0)) })
-        return MenuBarPresenter.present(limits: limits, projections: p, mode: mode, isStale: stale, now: t0, fmt: fmt)
+        return MenuBarPresenter.present(limits: limits, projections: p, mode: mode,
+                                        staleProviders: stale ? [.claude] : [], now: t0, fmt: fmt)
     }
 
     @Test func autoPicksAtRiskSessionAndShowsTimeToLimit() {

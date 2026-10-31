@@ -21,6 +21,9 @@ final class UsageStore {
     private(set) var isLoading     = false
     private(set) var fetchState    = FetchState()
     private(set) var feedState:    StatusLineInstaller.State = .notInstalled
+    private(set) var antigravity:  AntigravitySnapshot?
+    private(set) var antigravityRunning = false
+    private(set) var antigravityError: UsageError?
     // Advanced every 30 s so projections, countdowns and staleness move on
     // their own between data updates.
     private(set) var now = Date()
@@ -30,6 +33,7 @@ final class UsageStore {
     @ObservationIgnored private let system = SystemMonitor()
     @ObservationIgnored private let client = UsageClient()
     @ObservationIgnored private let cli = ClaudeCLI()
+    @ObservationIgnored private let antigravityClient = AntigravityClient()
     @ObservationIgnored private let installer = AppPaths.statusLineInstaller
     @ObservationIgnored private let defaults = UserDefaults.standard
     @ObservationIgnored private var rejectedFingerprint: String?
@@ -39,6 +43,7 @@ final class UsageStore {
     @ObservationIgnored private var loops: [Task<Void, Never>] = []
 
     private static let snapshotKey = "snapshot.v2"
+    private static let antigravityKey = "antigravity.v1"
     private static let firedKey = "firedAlerts"
     static let staleAfter: TimeInterval = 30 * 60
 
@@ -50,14 +55,24 @@ final class UsageStore {
         if let data = try? Data(contentsOf: AppPaths.historyFile) {
             history = (try? JSONDecoder().decode(UsageHistory.self, from: data)) ?? UsageHistory()
         }
+        if let data = defaults.data(forKey: Self.antigravityKey) {
+            antigravity = try? JSONDecoder().decode(AntigravitySnapshot.self, from: data)
+        }
         firedAlerts = Set(defaults.stringArray(forKey: Self.firedKey) ?? [])
         fetchState.lastSuccess = apiSnapshot?.fetchedAt
     }
 
     // MARK: Derived state
 
-    var limits: [UsageLimit] {
+    var limits: [UsageLimit] { claudeLimits + geminiLimits }
+
+    var claudeLimits: [UsageLimit] {
         UsageMerger.merge(api: apiSnapshot?.limits ?? [], feed: feedLimits, now: now)
+    }
+
+    var geminiLimits: [UsageLimit] {
+        guard prefs.trackAntigravity, let antigravity else { return [] }
+        return UsageMerger.merge(api: antigravity.limits, feed: [], now: now).filter(AntigravityParser.isShown)
     }
 
     var projections: [String: Projection] {
@@ -71,6 +86,21 @@ final class UsageStore {
     var cooldownUntil: Date? { FetchScheduler.inCooldown(fetchState, now: now) ? fetchState.cooldownUntil : nil }
     var canRefresh: Bool { !isLoading && !FetchScheduler.inCooldown(fetchState, now: Date()) }
 
+    // Gemini quota only moves while Antigravity runs, so a closed Antigravity
+    // isn't stale data: it's the last reading, still true. Stale means
+    // Antigravity is running and we've failed to read it for a while.
+    var isGeminiStale: Bool {
+        guard antigravityRunning, let fetched = antigravity?.fetchedAt else { return false }
+        return now.timeIntervalSince(fetched) > 10 * 60
+    }
+
+    var staleProviders: Set<Provider> {
+        var s: Set<Provider> = []
+        if isStale { s.insert(.claude) }
+        if isGeminiStale { s.insert(.antigravity) }
+        return s
+    }
+
     // Login problems always matter. Transient errors only matter once the
     // numbers on screen are getting old; a 429 while the feed is live is noise.
     var visibleError: UsageError? {
@@ -83,7 +113,7 @@ final class UsageStore {
 
     func menuBar(fmt: TimeFormatting = TimeFormatting()) -> MenuBarPresentation {
         MenuBarPresenter.present(limits: limits, projections: projections, mode: prefs.menuBarMode,
-                                 isStale: isStale, now: now, fmt: fmt)
+                                 staleProviders: staleProviders, now: now, fmt: fmt)
     }
 
     // MARK: Lifecycle
@@ -107,6 +137,12 @@ final class UsageStore {
                 self?.pollFeed()
             }
         })
+        loops.append(Task { [weak self] in
+            while !Task.isCancelled {
+                await self?.refreshAntigravity()
+                try? await Task.sleep(for: .seconds(60))
+            }
+        })
     }
 
     func saveNow() {
@@ -116,6 +152,7 @@ final class UsageStore {
     // Opening the popover, waking, unlocking or reconnecting.
     func nudge() {
         now = Date()
+        Task { await refreshAntigravity() }
         guard FetchScheduler.shouldFetchOnNudge(fetchState, now: now) else { return }
         Task { await refresh() }
     }
@@ -169,6 +206,28 @@ final class UsageStore {
             fail(.unauthorized)
         } catch {
             fail(error as? UsageError ?? .network(error.localizedDescription))
+        }
+    }
+
+    // MARK: Gemini (Antigravity)
+
+    func refreshAntigravity() async {
+        guard prefs.trackAntigravity, !system.isIdle else { return }
+        do {
+            guard let data = try await antigravityClient.fetchStatus() else {
+                antigravityRunning = false
+                antigravityError = nil
+                return
+            }
+            antigravityRunning = true
+            let snapshot = try AntigravityParser.parse(data, now: Date(), previous: antigravity?.limits ?? [])
+            antigravity = snapshot
+            antigravityError = nil
+            if let encoded = try? JSONEncoder().encode(snapshot) { defaults.set(encoded, forKey: Self.antigravityKey) }
+            now = Date()
+            dataChanged()
+        } catch {
+            antigravityError = error as? UsageError ?? .network(error.localizedDescription)
         }
     }
 

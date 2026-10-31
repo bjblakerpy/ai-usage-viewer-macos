@@ -1,0 +1,24 @@
+{
+  "_comment": "Made-up values in the shape of Antigravity's GetUserStatus response (Oct 2026). Pretend now = 2030-01-01T00:00:00Z.",
+  "userStatus": {
+    "name": "Example User",
+    "email": "user@example.com",
+    "planStatus": {
+      "planInfo": { "teamsTier": "TEAMS_TIER_PRO", "planName": "Pro" },
+      "availablePromptCredits": 500
+    },
+    "userTier": { "id": "g1-pro-tier", "name": "Google AI Pro" },
+    "cascadeModelConfigData": {
+      "clientModelConfigs": [
+        { "label": "Gemini 4 Argon (Medium)", "quotaInfo": { "remainingFraction": 0.6, "resetTime": "2030-01-05T12:00:00Z" } },
+        { "label": "Gemini 4 Argon (High)",   "quotaInfo": { "remainingFraction": 0.4, "resetTime": "2030-01-05T12:00:00Z" } },
+        { "label": "Gemini 3.8 Flash (High)", "quotaInfo": { "resetTime": "2030-01-01T03:00:00Z" } },
+        { "label": "Gemini 3.8 Flash (Low)",  "quotaInfo": { "resetTime": "2030-01-01T03:00:00Z" } },
+        { "label": "Claude Opus 5.5 (High)",  "quotaInfo": { "remainingFraction": 1, "resetTime": "2030-01-01T05:00:00Z" } },
+        { "label": "GPT-OSS 120B (Medium)",   "quotaInfo": { "remainingFraction": 0.8, "resetTime": "2030-01-01T04:00:00Z" } },
+        { "label": "Some Model Without Quota" },
+        { "label": "Broken Quota", "quotaInfo": { "remainingFraction": 0.5, "resetTime": "not a date" } }
+      ]
+    }
+  }
+}

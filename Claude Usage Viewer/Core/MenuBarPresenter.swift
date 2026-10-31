@@ -12,10 +12,10 @@ nonisolated enum MenuBarMode: String, Codable, CaseIterable, Sendable, Identifia
 
     var label: String {
         switch self {
-        case .auto:    "Most urgent limit"
-        case .session: "Session (5-hour)"
-        case .weekly:  "Weekly"
-        case .both:    "Session and weekly"
+        case .auto:    "Most urgent limit (Claude or Gemini)"
+        case .session: "Claude session (5-hour)"
+        case .weekly:  "Claude weekly"
+        case .both:    "Claude session and weekly"
         }
     }
 }
@@ -29,21 +29,27 @@ nonisolated struct MenuBarPresentation: Equatable, Sendable {
     var severity:        Severity
     var isStale:         Bool
     var tooltip:         String
+    // Whose limit is shown: picks the bars icon (Claude) or sparkle (Gemini).
+    var provider:        Provider = .claude
 }
 
 nonisolated enum MenuBarPresenter {
+    // `staleProviders`: providers whose numbers are old enough to distrust;
+    // the item dims when the limit it shows comes from one of them.
     static func present(limits: [UsageLimit], projections: [String: Projection], mode: MenuBarMode,
-                        isStale: Bool, now: Date, fmt: TimeFormatting) -> MenuBarPresentation {
+                        staleProviders: Set<Provider>, now: Date, fmt: TimeFormatting) -> MenuBarPresentation {
         let session = limits.first { $0.kind == UsageLimit.sessionKind }
         let weekly  = limits.first { $0.kind == UsageLimit.weeklyAllKind }
+        let staleNote = staleProviders.isEmpty ? ""
+            : "\n" + staleProviders.map(\.displayName).sorted().joined(separator: ", ") + " data may be out of date."
         let tooltip = limits.map { line($0, projections[$0.kind], now: now, fmt: fmt) }
-            .joined(separator: "\n") + (isStale ? "\nData may be out of date." : "")
+            .joined(separator: "\n") + staleNote
 
         var p = MenuBarPresentation(
             sessionFraction: session.map { min(1, $0.percent / 100) },
             weeklyFraction:  weekly.map { min(1, $0.percent / 100) },
-            text: "—", caption: nil, severity: .normal, isStale: isStale,
-            tooltip: tooltip.isEmpty ? "Claude usage: no data yet" : tooltip
+            text: "—", caption: nil, severity: .normal, isStale: staleProviders.contains(.claude),
+            tooltip: tooltip.isEmpty ? "Usage: no data yet" : tooltip
         )
 
         if mode == .both {
@@ -64,6 +70,8 @@ nonisolated enum MenuBarPresenter {
         }
         guard let chosen else { return p }
         let projection = projections[chosen.kind]
+        p.provider = chosen.provider
+        p.isStale = staleProviders.contains(chosen.provider)
         p.text = TimeFormatting.percent(chosen.percent)
         p.severity = projection?.severity ?? .normal
         p.caption = alertCaption(chosen, projection, now: now) ?? (chosen.shortLabel.isEmpty ? nil : chosen.shortLabel)

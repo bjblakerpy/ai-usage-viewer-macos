@@ -66,6 +66,26 @@ struct SettingsView: View {
                 Text("Live updates from Claude Code")
             }
 
+            Section {
+                Toggle("Track Gemini quota from Antigravity", isOn: $prefs.trackAntigravity)
+                    .onChange(of: prefs.trackAntigravity) { _, on in
+                        if on { Task { await store.refreshAntigravity() } }
+                    }
+                if prefs.trackAntigravity {
+                    if store.antigravityRunning {
+                        Label("Connected to Antigravity", systemImage: "checkmark.circle.fill").foregroundStyle(.green)
+                    } else {
+                        Label("Antigravity isn't running", systemImage: "circle").foregroundStyle(.secondary)
+                    }
+                }
+                Text("Gemini quota is read from the Antigravity app on this Mac while it's running; when it's closed you'll see the last reading. Nothing extra is signed in to or sent anywhere. The Gemini web app and Gemini API billing aren't covered.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            } header: {
+                Text("Gemini")
+            }
+
             Section("About") {
                 LabeledContent("Version", value: Self.version)
                 Link("Source on GitHub", destination: Links.repo)

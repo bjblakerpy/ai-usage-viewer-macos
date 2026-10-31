@@ -54,7 +54,9 @@ final class StatusItemController: NSObject {
     private func update() {
         guard let button = statusItem.button else { return }
         let p = store.menuBar()
-        button.image = MenuBarRenderer.icon(session: p.sessionFraction, weekly: p.weeklyFraction)
+        button.image = p.provider == .antigravity
+            ? MenuBarRenderer.sparkle()
+            : MenuBarRenderer.icon(session: p.sessionFraction, weekly: p.weeklyFraction)
         button.attributedTitle = MenuBarRenderer.title(p)
         button.appearsDisabled = p.isStale
         button.toolTip = p.tooltip
@@ -120,6 +122,31 @@ enum MenuBarRenderer {
                 NSColor.black.setFill()
                 NSBezierPath(roundedRect: fill, xRadius: 2, yRadius: 2).fill()
             }
+            return true
+        }
+        image.isTemplate = true
+        return image
+    }
+
+    // Four-point sparkle, shown when the most urgent limit is a Gemini one.
+    static func sparkle() -> NSImage {
+        let image = NSImage(size: NSSize(width: 14, height: 14), flipped: false) { rect in
+            let c = NSPoint(x: rect.midX, y: rect.midY)
+            let r = rect.width / 2, pinch = r * 0.12
+            // Tips at N, E, S, W; each edge bows in toward a point just off
+            // centre between the two tips it joins.
+            let dirs: [(CGFloat, CGFloat)] = [(0, 1), (1, 0), (0, -1), (-1, 0)]
+            let path = NSBezierPath()
+            path.move(to: NSPoint(x: c.x, y: c.y + r))
+            for i in 0..<4 {
+                let a = dirs[i], b = dirs[(i + 1) % 4]
+                let control = NSPoint(x: c.x + pinch * (a.0 + b.0), y: c.y + pinch * (a.1 + b.1))
+                path.curve(to: NSPoint(x: c.x + b.0 * r, y: c.y + b.1 * r),
+                           controlPoint1: control, controlPoint2: control)
+            }
+            path.close()
+            NSColor.black.setFill()
+            path.fill()
             return true
         }
         image.isTemplate = true

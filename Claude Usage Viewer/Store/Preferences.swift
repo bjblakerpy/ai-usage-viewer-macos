@@ -27,6 +27,9 @@ final class Preferences {
     var notifyResets: Bool {
         didSet { defaults.set(notifyResets, forKey: "notifyResets") }
     }
+    var trackAntigravity: Bool {
+        didSet { defaults.set(trackAntigravity, forKey: "trackAntigravity") }
+    }
     // Set once we've turned on launch-at-login for the first time, so a
     // user who later turns it off isn't overridden.
     var didSetUpLoginItem: Bool {
@@ -41,6 +44,7 @@ final class Preferences {
             "thresholdLow": 80,
             "thresholdHigh": 95,
             "notifyResets": true,
+            "trackAntigravity": true,
         ])
         menuBarMode       = MenuBarMode(rawValue: defaults.string(forKey: "menuBarMode") ?? "") ?? .auto
         notifyProjection  = defaults.bool(forKey: "notifyProjection")
@@ -48,6 +52,7 @@ final class Preferences {
         thresholdLow      = defaults.integer(forKey: "thresholdLow")
         thresholdHigh     = defaults.integer(forKey: "thresholdHigh")
         notifyResets      = defaults.bool(forKey: "notifyResets")
+        trackAntigravity  = defaults.bool(forKey: "trackAntigravity")
         didSetUpLoginItem = defaults.bool(forKey: "didSetUpLoginItem")
     }
 

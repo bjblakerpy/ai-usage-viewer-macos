@@ -36,6 +36,17 @@ nonisolated enum LimitGroup: String, Codable, Sendable {
     }
 }
 
+nonisolated enum Provider: String, Codable, Sendable {
+    case claude, antigravity
+
+    var displayName: String {
+        switch self {
+        case .claude:      "Claude"
+        case .antigravity: "Gemini · Antigravity"
+        }
+    }
+}
+
 nonisolated struct UsageLimit: Codable, Equatable, Sendable, Identifiable {
     static let sessionKind = "session"
     static let weeklyAllKind = "weekly_all"
@@ -47,6 +58,7 @@ nonisolated struct UsageLimit: Codable, Equatable, Sendable, Identifiable {
     var resetsAt:       Date?
     var serverSeverity: Severity = .normal
     var observedAt:     Date
+    var provider:       Provider = .claude
 
     var id: String { kind }
 
@@ -88,6 +100,26 @@ nonisolated struct UsageLimit: Codable, Equatable, Sendable, Identifiable {
         if kind == sessionKind { return .session }
         if kind.hasPrefix("weekly") || kind.hasPrefix("seven_day") { return .weekly }
         return .other
+    }
+}
+
+// Snapshots saved before `provider` existed must still decode (as Claude).
+// Declared in an extension so the memberwise initializer survives.
+nonisolated extension UsageLimit {
+    private enum CodingKeys: String, CodingKey {
+        case kind, group, title, percent, resetsAt, serverSeverity, observedAt, provider
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        kind           = try c.decode(String.self, forKey: .kind)
+        group          = try c.decode(LimitGroup.self, forKey: .group)
+        title          = try c.decode(String.self, forKey: .title)
+        percent        = try c.decode(Double.self, forKey: .percent)
+        resetsAt       = try c.decodeIfPresent(Date.self, forKey: .resetsAt)
+        serverSeverity = try c.decodeIfPresent(Severity.self, forKey: .serverSeverity) ?? .normal
+        observedAt     = try c.decode(Date.self, forKey: .observedAt)
+        provider       = try c.decodeIfPresent(Provider.self, forKey: .provider) ?? .claude
     }
 }
 

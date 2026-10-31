@@ -12,11 +12,18 @@ struct PopoverView: View {
 
     var body: some View {
         let now = store.now
-        let limits = store.limits
+        let limits = store.claudeLimits
         let projections = store.projections
 
         VStack(alignment: .leading, spacing: 14) {
-            header(now: now)
+            SectionHeader(title: "Claude", plan: store.planName) {
+                if store.isFeedLive {
+                    LiveBadge().help("Updating live from Claude Code's status line")
+                } else if let updated = store.lastUpdated {
+                    Text("Updated \(TimeFormatting.duration(now.timeIntervalSince(updated))) ago")
+                        .foregroundStyle(store.isStale ? Color.orange : Color.secondary)
+                }
+            }
 
             if limits.isEmpty {
                 Text(store.visibleError?.message(now: now) ?? "Loading usage…")
@@ -46,6 +53,11 @@ struct PopoverView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
 
+            if store.prefs.trackAntigravity {
+                Divider()
+                geminiSection(now: now, projections: projections)
+            }
+
             Divider()
             footer(now: now)
         }
@@ -53,29 +65,36 @@ struct PopoverView: View {
         .frame(width: 340)
     }
 
-    private func header(now: Date) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 6) {
-            Text("Claude Usage").font(.headline)
-            if let plan = store.planName {
-                Text(plan)
-                    .font(.caption2.weight(.medium))
-                    .padding(.horizontal, 6).padding(.vertical, 2)
-                    .background(.quaternary, in: Capsule())
+    @ViewBuilder
+    private func geminiSection(now: Date, projections: [String: Projection]) -> some View {
+        let limits = store.geminiLimits
+        SectionHeader(title: "Gemini · Antigravity", plan: store.antigravity?.planName) {
+            if store.antigravityRunning && !store.isGeminiStale {
+                LiveBadge().help("Reading quota from the running Antigravity app")
+            } else if let seen = store.antigravity?.fetchedAt {
+                Text("Last seen \(TimeFormatting.duration(now.timeIntervalSince(seen))) ago")
+                    .foregroundStyle(store.isGeminiStale ? Color.orange : Color.secondary)
+                    .help(store.antigravityRunning ? "Antigravity is running but not answering"
+                                                   : "Antigravity is closed; quota only changes while you use it")
             }
-            Spacer()
-            if store.isFeedLive {
-                HStack(spacing: 4) {
-                    Circle().fill(.green).frame(width: 6, height: 6)
-                    Text("Live")
-                }
-                .font(.caption)
+        }
+
+        if limits.isEmpty {
+            Text(store.antigravityRunning ? "Reading Gemini quota…" : "Open Antigravity to see your Gemini quota.")
+                .font(.callout)
                 .foregroundStyle(.secondary)
-                .help("Updating live from Claude Code's status line")
-            } else if let updated = store.lastUpdated {
-                Text("Updated \(TimeFormatting.duration(now.timeIntervalSince(updated))) ago")
-                    .font(.caption)
-                    .foregroundStyle(store.isStale ? Color.orange : Color.secondary)
+        } else {
+            ForEach(limits) { limit in
+                LimitRowView(limit: limit, projection: projections[limit.kind],
+                             samples: store.history.samples(for: limit), now: now, fmt: fmt)
             }
+        }
+
+        if store.antigravityRunning, let err = store.antigravityError {
+            Label(err.message(now: now), systemImage: "exclamationmark.triangle")
+                .font(.caption)
+                .foregroundStyle(.orange)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 
@@ -111,6 +130,36 @@ struct PopoverView: View {
         }
         .buttonStyle(.borderless)
         .font(.callout)
+    }
+}
+
+struct SectionHeader<Status: View>: View {
+    let title: String
+    let plan:  String?
+    @ViewBuilder let status: () -> Status
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
+            Text(title).font(.headline)
+            if let plan {
+                Text(plan)
+                    .font(.caption2.weight(.medium))
+                    .padding(.horizontal, 6).padding(.vertical, 2)
+                    .background(.quaternary, in: Capsule())
+            }
+            Spacer()
+            status().font(.caption)
+        }
+    }
+}
+
+struct LiveBadge: View {
+    var body: some View {
+        HStack(spacing: 4) {
+            Circle().fill(.green).frame(width: 6, height: 6)
+            Text("Live")
+        }
+        .foregroundStyle(.secondary)
     }
 }
 

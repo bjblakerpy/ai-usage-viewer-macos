@@ -1,7 +1,8 @@
 # Claude Usage Viewer
 
-A macOS menu-bar app that shows your Claude plan usage at a glance — and,
-more usefully, whether you're on track to run out before your limits reset.
+A macOS menu-bar app that shows your Claude plan usage — and your Gemini
+quota from Google Antigravity — at a glance, and more usefully, whether
+you're on track to run out before your limits reset.
 
 ```
 ▬ 75% ~33m        ← session at 75%, on pace to hit the limit in ~33 minutes
@@ -16,6 +17,11 @@ more usefully, whether you're on track to run out before your limits reset.
 - **Everything the usage API knows:** session and weekly limits (plus any
   per-model weekly limits), a pace marker and sparkline per window, this
   week's usage by product, and extra-usage spend.
+- **Gemini too.** While the Antigravity app is running, its per-model quota
+  (e.g. Gemini 4 Argon weekly, Gemini 3.8 Flash 5-hour) shows in its own
+  popover section with the same pace projection and alerts. The menu bar
+  shows whichever limit, Claude or Gemini, is closest to running out — a ✦
+  icon means it's a Gemini one.
 - **Notifications** when you're on pace to hit a limit within the hour, at
   80%/95% (adjustable), when a limit is reached, and when it resets.
 - Dims when the data is stale; right-click for Refresh / Settings / Quit.
@@ -50,6 +56,7 @@ updates off restores it exactly.
 | Source | When | Cost |
 |---|---|---|
 | Status-line feed (`~/Library/Application Support/Claude Usage Viewer/statusline-feed.json`) | Whenever Claude Code updates its status line | Free |
+| Antigravity's local language server (`GetUserStatus` on a loopback port) | Every 60 s while Antigravity is running; the last reading is kept when it's closed | Free, local |
 | `GET api.anthropic.com/api/oauth/usage` | Every 15 min (30 while the feed is live), on wake/unlock, when you open the popover and data is >5 min old | Shares a ~3-calls-per-5-min limit with every Claude client on your login |
 
 The API call uses the OAuth token Claude Code keeps in the keychain item
@@ -59,8 +66,16 @@ under Claude Code — so if it has expired, the app waits for Claude Code to
 renew it. On HTTP 429 it waits exactly as long as `Retry-After` says, plus a
 little jitter. Nothing is sent anywhere except Anthropic's own API.
 
-The app is not sandboxed: it needs to run `/usr/bin/security`, find the
-installed `claude` binary (for the User-Agent) and read/write the feed.
+For Gemini, the app finds Antigravity's language server with `ps`/`lsof`,
+reads the CSRF token it was started with, and asks it for your status over
+`127.0.0.1` (its self-signed certificate is trusted for loopback only). The
+server talks to Google with Antigravity's own session; this app never sees a
+Google token. The Gemini web app and Gemini API billing aren't covered — no
+usable usage source exists for them. Turn Gemini off in Settings → Gemini.
+
+The app is not sandboxed: it needs to run `/usr/bin/security`, `ps` and
+`lsof`, find the installed `claude` binary (for the User-Agent) and
+read/write the feed.
 
 ## Development
 
