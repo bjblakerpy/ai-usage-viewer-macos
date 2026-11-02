@@ -10,7 +10,8 @@ nonisolated enum ProcessRunner {
     }
 
     // Runs a command off the main thread and kills it if it overruns.
-    static func run(_ executable: String, _ arguments: [String], timeout: TimeInterval = 5) async throws -> Output {
+    static func run(_ executable: String, _ arguments: [String], input: Data? = nil,
+                    timeout: TimeInterval = 5) async throws -> Output {
         try await withCheckedThrowingContinuation { cont in
             DispatchQueue.global(qos: .utility).async {
                 let p = Process()
@@ -19,8 +20,13 @@ nonisolated enum ProcessRunner {
                 let out = Pipe()
                 p.standardOutput = out
                 p.standardError = FileHandle.nullDevice
-                p.standardInput = FileHandle.nullDevice
+                let stdin = input.map { _ in Pipe() }
+                p.standardInput = stdin ?? FileHandle.nullDevice
                 do { try p.run() } catch { cont.resume(throwing: error); return }
+                if let stdin, let input {
+                    stdin.fileHandleForWriting.write(input)
+                    try? stdin.fileHandleForWriting.close()
+                }
                 DispatchQueue.global().asyncAfter(deadline: .now() + timeout) {
                     if p.isRunning { p.terminate() }
                 }

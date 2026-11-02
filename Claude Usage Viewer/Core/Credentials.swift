@@ -2,8 +2,8 @@
 // Claude Usage Viewer
 //
 // Parses the JSON Claude Code keeps in the "Claude Code-credentials"
-// keychain item. We only ever READ it: refreshing the token ourselves
-// would rotate it out from under Claude Code and log it out.
+// keychain item. It's renewed here only when it has expired and no
+// terminal/IDE Claude Code is running to renew it (see TokenRenewal).
 
 import Foundation
 import CryptoKit
@@ -13,6 +13,8 @@ nonisolated struct ClaudeCredentials: Equatable, Sendable, CustomStringConvertib
     var expiresAt:        Date?
     var subscriptionType: String?
     var rateLimitTier:    String?
+    var refreshToken:     String?
+    var scopes:           [String] = []
 
     // Keep the token out of logs and debugger output.
     var description: String { "ClaudeCredentials(token: <redacted>, expiresAt: \(String(describing: expiresAt)))" }
@@ -47,7 +49,9 @@ nonisolated struct ClaudeCredentials: Equatable, Sendable, CustomStringConvertib
             accessToken:      token,
             expiresAt:        UsageAPIParser.number(oauth["expiresAt"]).map { Date(timeIntervalSince1970: $0 / 1000) },
             subscriptionType: oauth["subscriptionType"] as? String,
-            rateLimitTier:    oauth["rateLimitTier"] as? String
+            rateLimitTier:    oauth["rateLimitTier"] as? String,
+            refreshToken:     oauth["refreshToken"] as? String,
+            scopes:           oauth["scopes"] as? [String] ?? []
         )
     }
 }

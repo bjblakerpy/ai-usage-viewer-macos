@@ -157,6 +157,7 @@ nonisolated struct UsageSnapshot: Codable, Equatable, Sendable {
 nonisolated enum UsageError: LocalizedError, Equatable, Sendable {
     case noCredentials
     case loginExpired
+    case loginRevoked
     case unauthorized
     case rateLimited(retryAt: Date)
     case network(String)
@@ -170,7 +171,9 @@ nonisolated enum UsageError: LocalizedError, Equatable, Sendable {
         case .noCredentials:
             return "No Claude Code login found. Run `claude` and sign in."
         case .loginExpired:
-            return "Claude Code's login has expired. It renews the next time you use Claude Code."
+            return "Claude Code's login has expired. It will be renewed automatically."
+        case .loginRevoked:
+            return "Claude Code's login can't be renewed. Run `claude` in a terminal and use /login."
         case .unauthorized:
             return "Anthropic rejected Claude Code's login. Run `claude` and use /login."
         case .rateLimited(let at):

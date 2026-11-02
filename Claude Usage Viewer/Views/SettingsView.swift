@@ -57,7 +57,7 @@ struct SettingsView: View {
 
             Section {
                 feedStatus
-                Text("Claude Code hands your usage to its status line on every update. With live updates on, a small script saves it for this app, so the numbers move as you work without using Anthropic's usage-check limit. Any status line you already have keeps working, and removing this restores it.")
+                Text("Claude Code in a terminal hands your usage to its status line on every update. With live updates on, a small script saves it for this app, so the numbers move as you work without using Anthropic's usage-check limit. The desktop app's Code tab doesn't run status lines, so while you work there the app checks every 15 minutes instead. Any status line you already have keeps working, and removing this restores it.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)

@@ -9,6 +9,7 @@
 
 import Foundation
 import Observation
+import os
 
 @MainActor
 @Observable
@@ -37,6 +38,19 @@ final class UsageStore {
     @ObservationIgnored private let installer = AppPaths.statusLineInstaller
     @ObservationIgnored private let defaults = UserDefaults.standard
     @ObservationIgnored private var rejectedFingerprint: String?
+    // Renewal pacing, persisted so relaunching can't bypass it. The token
+    // endpoint rate-limits by network address (it 429s even a bogus token),
+    // so after a 429 the wait doubles from 20 min up to 2 h.
+    @ObservationIgnored private var renewalNotBefore: Date? {
+        get { defaults.object(forKey: "renewalNotBefore") as? Date }
+        set { defaults.set(newValue, forKey: "renewalNotBefore") }
+    }
+    @ObservationIgnored private var renewalBackoff: TimeInterval {
+        get { max(Self.renewalMinInterval, defaults.double(forKey: "renewalBackoff")) }
+        set { defaults.set(newValue, forKey: "renewalBackoff") }
+    }
+    private static let renewalMinInterval: TimeInterval = 10 * 60
+    private static let renewalMaxBackoff:  TimeInterval = 2 * 3600
     @ObservationIgnored private var firedAlerts: Set<String> = []
     @ObservationIgnored private var feedModified: Date?
     @ObservationIgnored private var historyDirty = false
@@ -105,7 +119,7 @@ final class UsageStore {
     // numbers on screen are getting old; a 429 while the feed is live is noise.
     var visibleError: UsageError? {
         switch error {
-        case .noCredentials?, .loginExpired?, .unauthorized?: return error
+        case .noCredentials?, .loginExpired?, .loginRevoked?, .unauthorized?: return error
         case nil: return nil
         default: return isStale ? error : nil
         }
@@ -170,17 +184,18 @@ final class UsageStore {
     // MARK: Fetching
 
     func refresh() async {
-        guard canRefresh else { return }
+        guard canRefresh else { Diagnostics.note("Claude refresh skipped (loading or cooldown)"); return }
         isLoading = true
         defer { isLoading = false }
         fetchState.lastAttempt = Date()
 
-        let creds: ClaudeCredentials
+        var creds: ClaudeCredentials
         do {
             creds = try await CredentialReader.read()
             planName = creds.planName
-            if creds.isExpired(now: Date()) { throw UsageError.loginExpired }
-            if creds.fingerprint == rejectedFingerprint { throw UsageError.unauthorized }
+            if creds.isExpired(now: Date()) || creds.fingerprint == rejectedFingerprint {
+                creds = try await renewLogin()
+            }
         } catch {
             fail(error as? UsageError ?? .noCredentials)
             return
@@ -191,6 +206,7 @@ final class UsageStore {
             apiSnapshot = snapshot
             error = nil
             rejectedFingerprint = nil
+            Diagnostics.note("Claude refresh ok")
             fetchState.lastSuccess = snapshot.fetchedAt
             fetchState.consecutiveFailures = 0
             fetchState.cooldownUntil = nil
@@ -231,7 +247,28 @@ final class UsageStore {
         }
     }
 
+    // Nobody renews Claude Code's keychain login while you work in the
+    // desktop app, so we do — at most every 10 minutes, and never while a
+    // terminal/IDE Claude Code is running (CredentialReader.renew checks).
+    private func renewLogin() async throws -> ClaudeCredentials {
+        if let notBefore = renewalNotBefore, Date() < notBefore { throw UsageError.loginExpired }
+        renewalNotBefore = Date().addingTimeInterval(Self.renewalMinInterval)
+        do {
+            let renewed = try await CredentialReader.renew()
+            rejectedFingerprint = nil
+            renewalBackoff = Self.renewalMinInterval
+            return renewed
+        } catch UsageError.rateLimited(let retryAt) {
+            let backoff = min(renewalBackoff * 2, Self.renewalMaxBackoff)
+            renewalBackoff = backoff
+            renewalNotBefore = max(retryAt, Date().addingTimeInterval(backoff))
+            Diagnostics.note("login renewal rate-limited; next try after \(renewalNotBefore!)")
+            throw UsageError.loginExpired
+        }
+    }
+
     private func fail(_ e: UsageError) {
+        Diagnostics.note("Claude refresh failed: \(e)")
         error = e
         fetchState.consecutiveFailures += 1
     }
