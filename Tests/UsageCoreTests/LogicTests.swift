@@ -235,7 +235,7 @@ func limit(_ kind: String = UsageLimit.sessionKind, percent: Double, resetsIn: T
         let actions = plan(l)
         #expect(actions.contains { $0.id.hasPrefix("limited|") })
         #expect(actions.contains(.schedule(id: "reset|session@\(l.windowKey!)", at: l.resetsAt!,
-                                           title: "Session (5-hour) limit has reset",
+                                           title: "Claude session (5-hour) limit has reset",
                                            body: "You're back to full capacity.")))
         // No threshold alerts once limited.
         #expect(!actions.contains { $0.id.hasPrefix("threshold") })

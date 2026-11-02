@@ -1,6 +1,6 @@
 // swift-tools-version: 6.2
 //
-// Builds the app's pure logic (Claude Usage Viewer/Core) as a library so it
+// Builds the app's pure logic (AI Usage Viewer/Core) as a library so it
 // can be unit-tested with `swift test` / `make test`. The Xcode project
 // compiles the same files directly into the app.
 
@@ -12,7 +12,7 @@ let package = Package(
     targets: [
         .target(
             name: "UsageCore",
-            path: "Claude Usage Viewer/Core"
+            path: "AI Usage Viewer/Core"
         ),
         .testTarget(
             name: "UsageCoreTests",

@@ -11,7 +11,7 @@ import Testing
             .appendingPathComponent("installer-tests-\(UUID().uuidString)")
         installer = StatusLineInstaller(
             settingsURL: root.appendingPathComponent("claude/settings.json"),
-            supportDir:  root.appendingPathComponent("App Support/Claude Usage Viewer")
+            supportDir:  root.appendingPathComponent("App Support/AI Usage Viewer")
         )
         try FileManager.default.createDirectory(at: root.appendingPathComponent("claude"),
                                                 withIntermediateDirectories: true)
@@ -93,6 +93,55 @@ import Testing
         #expect(limits.first?.percent == 42)
         let attrs = try FileManager.default.attributesOfItem(atPath: installer.feedURL.path)
         #expect((attrs[.posixPermissions] as? Int) == 0o600)
+    }
+
+    // The rename moves the whole folder; the status line must follow it and
+    // keep running the user's own status line, without re-saving our old
+    // script as "previous".
+    @Test func migrationMovesFolderAndRepointsStatusLine() throws {
+        let old = StatusLineInstaller(settingsURL: installer.settingsURL,
+                                      supportDir: root.appendingPathComponent("App Support/Claude Usage Viewer"))
+        try writeSettings(#"{"statusLine":{"type":"command","command":"cat >/dev/null; echo mine","padding":1}}"#)
+        try old.install()
+        try Data("history".utf8).write(to: old.supportDir.appendingPathComponent("history.json"))
+
+        let outcome = SupportFolderMigration.run(from: old.supportDir, to: installer.supportDir,
+                                                 settingsURL: installer.settingsURL)
+        #expect(outcome == .moved(statusLineUpdated: true))
+        #expect(!FileManager.default.fileExists(atPath: old.supportDir.path))
+        #expect(FileManager.default.fileExists(atPath: installer.supportDir.appendingPathComponent("history.json").path))
+        #expect(installer.state() == .installed)
+        let line = try settings()["statusLine"] as! [String: Any]
+        #expect(line["padding"] as? Int == 1)
+        #expect(try String(contentsOf: installer.previousCommandURL, encoding: .utf8) == "cat >/dev/null; echo mine")
+        #expect(try String(contentsOf: installer.scriptURL, encoding: .utf8).contains(installer.supportDir.path))
+
+        #expect(SupportFolderMigration.run(from: old.supportDir, to: installer.supportDir,
+                                           settingsURL: installer.settingsURL) == .nothingToDo)
+        try installer.uninstall()
+        #expect((try settings()["statusLine"] as! [String: Any])["command"] as? String == "cat >/dev/null; echo mine")
+    }
+
+    @Test func migrationLeavesSomeoneElsesStatusLineAlone() throws {
+        let oldDir = root.appendingPathComponent("App Support/Claude Usage Viewer")
+        try FileManager.default.createDirectory(at: oldDir, withIntermediateDirectories: true)
+        try writeSettings(#"{"statusLine":{"type":"command","command":"echo other"}}"#)
+        let outcome = SupportFolderMigration.run(from: oldDir, to: installer.supportDir, settingsURL: installer.settingsURL)
+        #expect(outcome == .moved(statusLineUpdated: false))
+        #expect((try settings()["statusLine"] as! [String: Any])["command"] as? String == "echo other")
+    }
+
+    @Test func migrationRollsBackWhenSettingsAreUnreadable() throws {
+        let old = StatusLineInstaller(settingsURL: installer.settingsURL,
+                                      supportDir: root.appendingPathComponent("App Support/Claude Usage Viewer"))
+        try old.install()
+        try writeSettings("{ not json")
+        guard case .failed = SupportFolderMigration.run(from: old.supportDir, to: installer.supportDir,
+                                                        settingsURL: installer.settingsURL) else {
+            Issue.record("expected failure"); return
+        }
+        #expect(FileManager.default.fileExists(atPath: old.scriptURL.path))
+        #expect(!FileManager.default.fileExists(atPath: installer.supportDir.path))
     }
 
     @Test func shellQuoting() {
