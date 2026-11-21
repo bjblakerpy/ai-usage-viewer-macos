@@ -67,7 +67,7 @@ struct SettingsView: View {
             }
 
             Section {
-                Toggle("Track Gemini quota from Antigravity", isOn: $prefs.trackAntigravity)
+                Toggle("Track model quota from Antigravity", isOn: $prefs.trackAntigravity)
                     .onChange(of: prefs.trackAntigravity) { _, on in
                         if on { Task { await store.refreshAntigravity() } }
                     }
@@ -78,12 +78,12 @@ struct SettingsView: View {
                         Label("Antigravity isn't running", systemImage: "circle").foregroundStyle(.secondary)
                     }
                 }
-                Text("Gemini quota is read from the Antigravity app on this Mac while it's running; when it's closed you'll see the last reading. Nothing extra is signed in to or sent anywhere. The Gemini web app and Gemini API billing aren't covered.")
+                Text("Antigravity's quota is per model (Gemini, and the Claude and GPT-OSS models it runs on its own quota). The session and weekly rows show whichever model has used the most, named after the dot. It's read from the Antigravity app on this Mac while it's running; when it's closed you'll see the last reading. Nothing extra is signed in to or sent anywhere. The Gemini web app and Gemini API billing aren't covered.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             } header: {
-                Text("Gemini")
+                Text("Google Antigravity")
             }
 
             Section {

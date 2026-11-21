@@ -30,13 +30,28 @@ import Testing
         #expect(flash.group == .session)
     }
 
-    @Test func nonGeminiModelsAreLabelledAndHiddenUntilUsed() throws {
+    // Like Claude and Codex: one session row and one weekly row, each the
+    // most-used model in that window. Every model is still kept underneath.
+    @Test func summarizesToSessionAndWeeklyUsingTheMostUsedModel() throws {
         let s = try AntigravityParser.parse(fixture(), now: now, previous: [])
-        #expect(s.limits[2].title == "Claude Opus 5.5 in Antigravity")
-        #expect(s.limits[2].percent == 0)
-        #expect(!AntigravityParser.isShown(s.limits[2]))
-        #expect(AntigravityParser.isShown(s.limits[3]))   // GPT-OSS at 20% used
-        #expect(AntigravityParser.isShown(s.limits[1]))   // Gemini always shown
+        #expect(s.limits.count == 4)
+        let rows = AntigravityParser.summarize(s.limits)
+        #expect(rows.map(\.kind) == ["antigravity:session", "antigravity:weekly"])
+        #expect(rows[0].title == "Session (5-hour) · Gemini 3.8 Flash")   // 100% beats GPT-OSS at 20%
+        #expect(rows[0].percent == 100)
+        #expect(rows[0].group == .session)
+        #expect(rows[1].title == "Weekly · Gemini 4 Argon")
+        #expect(rows[1].percent == 60)
+        #expect(rows[1].fullTitle == "Antigravity weekly · Gemini 4 Argon")
+    }
+
+    @Test func unusedWindowIsNamedPlainlyAndMissingWindowIsLeftOut() {
+        let at = Date(timeIntervalSince1970: 0)
+        let idle = UsageLimit(kind: "antigravity:x", group: .session, title: "Gemini 3.8 Flash", percent: 0,
+                              resetsAt: nil, observedAt: at, provider: .antigravity)
+        let rows = AntigravityParser.summarize([idle])
+        #expect(rows.map(\.title) == ["Session (5-hour)"])
+        #expect(AntigravityParser.summarize([]).isEmpty)
     }
 
     @Test func weeklyWindowNearItsEndKeepsItsLearnedGroup() {
@@ -82,6 +97,34 @@ import Testing
         #expect(AntigravityDiscovery.server(fromPS: ps) == .init(pid: 11321, csrf: "abc-123"))
         #expect(AntigravityDiscovery.server(fromPS: "1 /Applications/Antigravity.app/Contents/Resources/bin/language_server --csrf_token=xyz")?.csrf == "xyz")
         #expect(AntigravityDiscovery.server(fromPS: "1 /Applications/Antigravity.app/Contents/MacOS/Antigravity") == nil)
+    }
+
+    // Antigravity 2.34+: the token comes from the daemon discovery file.
+    @Test func readsTheDiscoveryFile() {
+        let file = Data(#"{"pid":69298,"httpsPort":52400,"httpPort":52401,"lsVersion":"2.34.0","csrfToken":"0f1e2d3c-4b5a-6978-8796-a5b4c3d2e1f0"}"#.utf8)
+        let server = AntigravityDiscovery.server(fromDiscoveryFile: file)
+        #expect(server == .init(pid: 69298, csrf: "0f1e2d3c-4b5a-6978-8796-a5b4c3d2e1f0", ports: [52401, 52400]))
+    }
+
+    @Test func rejectsBadDiscoveryFiles() {
+        let bad = [
+            #"{"pid":1,"httpPort":52401}"#,                                           // no token
+            #"{"pid":1,"httpPort":52401,"csrfToken":"abc\r\nX-Evil: 1"}"#,           // header injection
+            #"{"pid":1,"httpPort":70000,"csrfToken":"0f1e2d3c-4b5a-6978"}"#,          // no usable port
+            #"{"pid":0,"httpPort":52401,"csrfToken":"0f1e2d3c-4b5a-6978"}"#,          // no process
+            "not json",
+        ]
+        for b in bad { #expect(AntigravityDiscovery.server(fromDiscoveryFile: Data(b.utf8)) == nil) }
+    }
+
+    @Test func listsRunningLanguageServers() {
+        let ps = """
+        69282 /Applications/Antigravity.app/Contents/MacOS/Antigravity
+        69298 /Applications/Antigravity.app/Contents/Resources/bin/language_server --standalone --https_server_port 0
+          500 /usr/bin/language_server
+        """
+        #expect(AntigravityDiscovery.languageServerPIDs(fromPS: ps) == [69298])
+        #expect(AntigravityDiscovery.server(fromPS: ps) == nil)   // 2.34 has no token flag
     }
 
     @Test func parsesLoopbackPortsOnly() {

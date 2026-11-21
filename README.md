@@ -18,11 +18,13 @@ usefully, whether you're on track to run out before your limits reset.
 - **Everything the usage API knows:** session and weekly limits (plus any
   per-model weekly limits), a pace marker and sparkline per window, this
   week's usage by product, and extra-usage spend.
-- **Gemini too.** While the Antigravity app is running, its per-model quota
-  (e.g. Gemini 4 Argon weekly, Gemini 3.8 Flash 5-hour) shows in its own
-  popover section with the same pace projection and alerts. The menu bar
-  shows whichever limit, from any service, is closest to running out — a ✦
-  icon means it's a Gemini one.
+- **Google Antigravity too.** While the Antigravity app is running, its
+  quota shows in its own popover section as a session (5-hour) and a weekly
+  row, like Claude's, with the same pace projection and alerts. Antigravity
+  counts quota per model, so each row is the most-used model in that window,
+  named after a "·" (e.g. "Weekly · Gemini 4 Argon").
+  The menu bar shows whichever limit, from any service, is closest to running
+  out — a ✦ icon means it's an Antigravity one.
 - **OpenAI too.** If you use Codex (OpenAI's CLI, IDE extension or app), your
   ChatGPT plan's 5-hour and weekly Codex limits get their own section, read
   from the session logs Codex keeps on your Mac. A `>_` icon in the menu bar
@@ -76,12 +78,22 @@ everything else in it. It never does this while a terminal/IDE Claude Code is
 running, so the two can't race. On HTTP 429 it waits exactly as long as `Retry-After` says, plus a
 little jitter. Nothing is sent anywhere except Anthropic's own API.
 
-For Gemini, the app finds Antigravity's language server with `ps`/`lsof`,
-reads the CSRF token it was started with, and asks it for your status over
-`127.0.0.1` (its self-signed certificate is trusted for loopback only). The
-server talks to Google with Antigravity's own session; this app never sees a
-Google token. The Gemini web app and Gemini API billing aren't covered — no
-usable usage source exists for them. Turn Gemini off in Settings → Gemini.
+For Antigravity, the app finds the desktop app's language server and its
+CSRF token from the discovery file Antigravity writes while it runs
+(`~/.gemini/antigravity/daemon/hub_*.json`, since version 2.34), or from
+the server's command line with `ps`/`lsof` on older versions. It then asks
+the server for your status over `127.0.0.1` (its self-signed certificate is
+trusted for loopback only). The server talks to Google with Antigravity's
+own session; this app never sees a Google token. Antigravity counts quota
+per model, and only some models (e.g. Gemini 4 Argon) have a weekly limit;
+the rest have only the 5-hour one. A window you haven't used yet shows 0%
+and its reset time moves forward until you do.
+
+The Antigravity CLI (`agy`) runs its own server and doesn't publish its
+token, so it can't be read directly. It uses the same account and quota,
+though, so CLI use shows up whenever the desktop app is open. The Gemini web
+app and Gemini API billing aren't covered — no usable usage source exists
+for them. Turn it off in Settings → Google Antigravity.
 
 For OpenAI, Codex writes each session to a JSON-lines log, and its
 `token_count` events include your plan's `rate_limits` (percent used, window

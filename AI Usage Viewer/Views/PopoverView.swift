@@ -55,7 +55,7 @@ struct PopoverView: View {
 
             if store.prefs.trackAntigravity {
                 Divider()
-                geminiSection(now: now, projections: projections)
+                antigravitySection(now: now, projections: projections)
             }
 
             if store.showsCodex {
@@ -71,21 +71,21 @@ struct PopoverView: View {
     }
 
     @ViewBuilder
-    private func geminiSection(now: Date, projections: [String: Projection]) -> some View {
-        let limits = store.geminiLimits
-        SectionHeader(title: "Gemini · Antigravity", plan: store.antigravity?.planName) {
-            if store.antigravityRunning && !store.isGeminiStale {
+    private func antigravitySection(now: Date, projections: [String: Projection]) -> some View {
+        let limits = store.antigravityLimits
+        SectionHeader(title: Provider.antigravity.displayName, plan: store.antigravity?.planName) {
+            if store.antigravityRunning && !store.isAntigravityStale {
                 LiveBadge().help("Reading quota from the running Antigravity app")
             } else if let seen = store.antigravity?.fetchedAt {
                 Text("Last seen \(TimeFormatting.duration(now.timeIntervalSince(seen))) ago")
-                    .foregroundStyle(store.isGeminiStale ? Color.orange : Color.secondary)
+                    .foregroundStyle(store.isAntigravityStale ? Color.orange : Color.secondary)
                     .help(store.antigravityRunning ? "Antigravity is running but not answering"
-                                                   : "Antigravity is closed; quota only changes while you use it")
+                                                   : "Antigravity is closed, so this is its last reading")
             }
         }
 
         if limits.isEmpty {
-            Text(store.antigravityRunning ? "Reading Gemini quota…" : "Open Antigravity to see your Gemini quota.")
+            Text(store.antigravityRunning ? "Reading Antigravity quota…" : "Open Antigravity to see your quota.")
                 .font(.callout)
                 .foregroundStyle(.secondary)
         } else {
@@ -93,6 +93,16 @@ struct PopoverView: View {
                 LimitRowView(limit: limit, projection: projections[limit.kind],
                              samples: store.history.samples(for: limit), now: now, fmt: fmt)
             }
+        }
+
+        // Usage only reaches the widget through the open desktop app; the
+        // CLI keeps using the same quota while it's closed.
+        if !store.antigravityRunning && !limits.isEmpty {
+            Label("Antigravity is closed, so this may be out of date. Open it to update, including any use in the Antigravity CLI.",
+                  systemImage: "info.circle")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
 
         if store.antigravityRunning, let err = store.antigravityError {

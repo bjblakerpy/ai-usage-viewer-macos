@@ -85,7 +85,7 @@ import Testing
     @Test func fullTitlesNameTheService() {
         #expect(limit("Session (5-hour)", .claude).fullTitle == "Claude session (5-hour)")
         #expect(limit("Weekly (all models)", .claude).fullTitle == "Claude weekly (all models)")
-        #expect(limit("Gemini 4 Argon", .antigravity).fullTitle == "Gemini 4 Argon")
+        #expect(limit("Session (5-hour)", .antigravity).fullTitle == "Antigravity session (5-hour)")
         #expect(limit("Weekly", .codex).fullTitle == "Codex weekly")
     }
 }

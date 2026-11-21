@@ -1,11 +1,14 @@
 // AntigravityClient.swift
 // AI Usage Viewer
 //
-// Reads Gemini quota from Antigravity's local language server. The server
-// picks a random loopback port at launch and guards its API with a CSRF
-// token passed on its command line, so each time Antigravity restarts we
-// rediscover both from `ps` and `lsof`. Nothing leaves the machine: the
-// server itself talks to Google with the session Antigravity owns.
+// Reads model quota from Antigravity's local language server. The server
+// picks random loopback ports at launch and guards its API with a CSRF
+// token, so each time Antigravity restarts we rediscover both: from the
+// discovery file it writes (2.34 and later) or, for older versions, from
+// its command line via `ps` and `lsof` (see AntigravityDiscovery).
+// Nothing leaves the machine: the server itself talks to Google with the
+// session Antigravity owns.
+// TODO(security review): reads Antigravity's local CSRF token; never log it.
 
 import Foundation
 
@@ -22,18 +25,29 @@ actor AntigravityClient {
         return URLSession(configuration: config, delegate: LoopbackTrust(), delegateQueue: nil)
     }()
 
+    static var daemonDir: URL {
+        FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".gemini/antigravity/daemon", isDirectory: true)
+    }
+
     // The raw GetUserStatus response, or nil if Antigravity isn't running.
     func fetchStatus() async throws -> Data? {
-        guard let found = await Self.findServer() else {
+        guard let out = try? await ProcessRunner.run("/bin/ps", ["-axo", "pid=,args="]), out.status == 0 else { return nil }
+        let ps = String(decoding: out.stdout, as: UTF8.self)
+        let running = AntigravityDiscovery.languageServerPIDs(fromPS: ps)
+        guard !running.isEmpty else {
             server = nil; endpoint = nil
             return nil
+        }
+        guard let found = Self.fromDiscoveryFiles(alive: running) ?? AntigravityDiscovery.server(fromPS: ps) else {
+            throw UsageError.network("Antigravity is running, but this version doesn't say how to reach its quota.")
         }
         if found != server { server = found; endpoint = nil }
 
         if let endpoint, let data = try? await request(endpoint, csrf: found.csrf) { return data }
         endpoint = nil
 
-        for port in await Self.ports(pid: found.pid) {
+        let ports = found.ports.isEmpty ? await Self.ports(pid: found.pid) : found.ports
+        for port in ports {
             for scheme in ["https", "http"] {
                 guard let url = URL(string: "\(scheme)://127.0.0.1:\(port)\(Self.path)") else { continue }
                 if let data = try? await request(url, csrf: found.csrf) {
@@ -57,9 +71,23 @@ actor AntigravityClient {
         return data
     }
 
-    private static func findServer() async -> AntigravityDiscovery.Server? {
-        guard let out = try? await ProcessRunner.run("/bin/ps", ["-axo", "pid=,args="]), out.status == 0 else { return nil }
-        return AntigravityDiscovery.server(fromPS: String(decoding: out.stdout, as: UTF8.self))
+    // The newest discovery file whose server is one of the running ones
+    // (a crash can leave a stale file behind).
+    private static func fromDiscoveryFiles(alive: Set<Int32>) -> AntigravityDiscovery.Server? {
+        let fm = FileManager.default
+        let files = ((try? fm.contentsOfDirectory(at: daemonDir, includingPropertiesForKeys: [.contentModificationDateKey])) ?? [])
+            .filter { $0.pathExtension == "json" }
+            .sorted {
+                let a = (try? $0.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
+                let b = (try? $1.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
+                return a > b
+            }
+        for url in files {
+            guard let data = try? Data(contentsOf: url), data.count < 64 * 1024,
+                  let server = AntigravityDiscovery.server(fromDiscoveryFile: data), alive.contains(server.pid) else { continue }
+            return server
+        }
+        return nil
     }
 
     private static func ports(pid: Int32) async -> [Int] {

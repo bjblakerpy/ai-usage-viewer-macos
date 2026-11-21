@@ -135,7 +135,7 @@ enum MenuBarRenderer {
         return image
     }
 
-    // Four-point sparkle, shown when the most urgent limit is a Gemini one.
+    // Four-point sparkle, shown when the most urgent limit is an Antigravity one.
     static func sparkle() -> NSImage {
         let image = NSImage(size: NSSize(width: 14, height: 14), flipped: false) { rect in
             let c = NSPoint(x: rect.midX, y: rect.midY)

@@ -42,7 +42,7 @@ nonisolated enum Provider: String, Codable, Sendable {
     var displayName: String {
         switch self {
         case .claude:      "Claude"
-        case .antigravity: "Gemini · Antigravity"
+        case .antigravity: "Google · Antigravity"
         case .codex:       "OpenAI · Codex"
         }
     }
@@ -76,13 +76,12 @@ nonisolated struct UsageLimit: Codable, Equatable, Sendable, Identifiable {
 
     // The title with its service named, for places that mix services
     // (notifications, the menu-bar tooltip): "Claude session (5-hour)".
-    // Antigravity titles already say what they are.
     var fullTitle: String {
         let name: String
         switch provider {
         case .claude:      name = "Claude"
         case .codex:       name = "Codex"
-        case .antigravity: return title
+        case .antigravity: name = "Antigravity"
         }
         return title.hasPrefix(name) ? title : "\(name) \(title.prefix(1).lowercased())\(title.dropFirst())"
     }

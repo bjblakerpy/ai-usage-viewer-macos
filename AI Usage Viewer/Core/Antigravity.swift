@@ -1,8 +1,10 @@
 // Antigravity.swift
 // AI Usage Viewer
 //
-// Gemini usage comes from Google Antigravity, the only Gemini tool here
-// that reports quota. Its local language server answers GetUserStatus
+// Google usage comes from Antigravity, the only Gemini tool here that
+// reports quota. It reports quota per model (Gemini, plus Claude and
+// GPT-OSS on Antigravity's own quota); the app keeps every model and shows
+// a session and a weekly row, like Claude and Codex (see summarize). Its local language server answers GetUserStatus
 // with a per-model `quotaInfo { remainingFraction, resetTime }`. It is an
 // undocumented local API, reachable only while Antigravity is running, so
 // parsing is lenient and the app falls back to the last reading.
@@ -43,8 +45,7 @@ nonisolated enum AntigravityParser {
             let remaining = min(1, max(0, UsageAPIParser.number(quota["remainingFraction"]) ?? 0))
             let family = familyName(label)
             let kind = kindPrefix + slug(family)
-            // Say where non-Gemini models live so they aren't mistaken for your Claude plan.
-            let title = family.hasPrefix("Gemini") ? family : "\(family) in Antigravity"
+            let title = family
             if let existing = families[kind], existing.remaining <= remaining { continue }
             families[kind] = (title, remaining, resetsAt, families[kind]?.order ?? i)
         }
@@ -62,6 +63,19 @@ nonisolated enum AntigravityParser {
         }
         guard !limits.isEmpty else { throw UsageError.decoding }
         return AntigravitySnapshot(limits: limits, planName: planName(status), fetchedAt: now)
+    }
+
+    // One session row and one weekly row, each the most-used model in that
+    // window, named after a "·" so it's clear whose number it is. Models
+    // are kept underneath because their reset times are how windows are told
+    // apart (see group).
+    static func summarize(_ models: [UsageLimit]) -> [UsageLimit] {
+        [(LimitGroup.session, "session", "Session (5-hour)"), (.weekly, "weekly", "Weekly")].compactMap { group, key, title in
+            guard var top = models.filter({ $0.group == group }).max(by: { $0.percent < $1.percent }) else { return nil }
+            if top.percent > 0 { top.title = "\(title) · \(top.title)" } else { top.title = title }
+            top.kind = kindPrefix + key
+            return top
+        }
     }
 
     static func group(kind: String, resetsAt: Date, now: Date, previous: [UsageLimit]) -> LimitGroup {
@@ -86,23 +100,48 @@ nonisolated enum AntigravityParser {
         }
         return ((status["planStatus"] as? [String: Any])?["planInfo"] as? [String: Any])?["planName"] as? String
     }
-
-    // Gemini models are what this feature is for; Antigravity's other
-    // models (Claude, GPT-OSS) draw on Antigravity quota, not your Claude
-    // plan, so they're only worth a row once you've actually used them.
-    static func isShown(_ limit: UsageLimit) -> Bool {
-        limit.title.hasPrefix("Gemini") || limit.percent > 0
-    }
 }
 
 // Finding the running language server and how to talk to it.
+//
+// Antigravity 2.34 (Nov 2026) stopped passing the CSRF token on the
+// server's command line. Instead, while it runs it writes a discovery file
+// for local clients, ~/.gemini/antigravity/daemon/hub_<port>.json:
+//   {"pid":…, "httpsPort":…, "httpPort":…, "lsVersion":"2.34.0", "csrfToken":"…"}
+// That file is tried first; the command-line flags still cover older versions.
 nonisolated enum AntigravityDiscovery {
     struct Server: Equatable, Sendable {
-        var pid:  Int32
-        var csrf: String
+        var pid:   Int32
+        var csrf:  String
+        // From the discovery file; empty means "ask lsof".
+        var ports: [Int] = []
     }
 
-    // From `ps -axo pid=,args=`.
+    static func server(fromDiscoveryFile data: Data) -> Server? {
+        guard let o = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+              let pid = (o["pid"] as? NSNumber)?.int32Value, pid > 0,
+              let csrf = o["csrfToken"] as? String, isPlausibleToken(csrf) else { return nil }
+        let ports = ["httpPort", "httpsPort"].compactMap { (o[$0] as? NSNumber)?.intValue }
+            .filter { (1...65535).contains($0) }
+        return ports.isEmpty ? nil : Server(pid: pid, csrf: csrf, ports: ports)
+    }
+
+    // The token goes into a request header, so accept only what a token
+    // looks like (Antigravity's are UUIDs).
+    static func isPlausibleToken(_ s: String) -> Bool {
+        (8...256).contains(s.count) && s.allSatisfy { $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "-" || $0 == "_") }
+    }
+
+    // PIDs of running Antigravity language servers, from `ps -axo pid=,args=`.
+    static func languageServerPIDs(fromPS output: String) -> Set<Int32> {
+        Set(output.split(separator: "\n").compactMap { line -> Int32? in
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            guard trimmed.contains("Antigravity.app/"), trimmed.contains("/language_server") else { return nil }
+            return trimmed.split(separator: " ").first.flatMap { Int32($0) }
+        })
+    }
+
+    // Older versions: the token is a command-line flag. From `ps -axo pid=,args=`.
     static func server(fromPS output: String) -> Server? {
         for line in output.split(separator: "\n") {
             let trimmed = line.trimmingCharacters(in: .whitespaces)

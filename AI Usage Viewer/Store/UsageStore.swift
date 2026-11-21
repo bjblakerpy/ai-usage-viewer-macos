@@ -6,7 +6,7 @@
 //      session/weekly numbers while you use Claude Code, at no API cost.
 //   2. The usage API (scheduled by FetchScheduler): everything else, and
 //      the session/weekly numbers when Claude Code is idle.
-// Gemini comes from the running Antigravity app and OpenAI from Codex's
+// Google comes from the running Antigravity app and OpenAI from Codex's
 // session logs, each checked every minute.
 
 import Foundation
@@ -75,7 +75,14 @@ final class UsageStore {
             history = (try? JSONDecoder().decode(UsageHistory.self, from: data)) ?? UsageHistory()
         }
         if let data = defaults.data(forKey: Self.antigravityKey) {
-            antigravity = try? JSONDecoder().decode(AntigravitySnapshot.self, from: data)
+            if var saved = try? JSONDecoder().decode(AntigravitySnapshot.self, from: data) {
+                // Readings saved before Nov 2026 put " in Antigravity" in
+                // model names; rows now name the service themselves.
+                for i in saved.limits.indices {
+                    saved.limits[i].title = saved.limits[i].title.replacingOccurrences(of: " in Antigravity", with: "")
+                }
+                antigravity = saved
+            }
         }
         if let data = defaults.data(forKey: Self.codexKey) {
             codex = try? JSONDecoder().decode(CodexSnapshot.self, from: data)
@@ -86,15 +93,16 @@ final class UsageStore {
 
     // MARK: Derived state
 
-    var limits: [UsageLimit] { claudeLimits + geminiLimits + codexLimits }
+    var limits: [UsageLimit] { claudeLimits + antigravityLimits + codexLimits }
 
     var claudeLimits: [UsageLimit] {
         UsageMerger.merge(api: apiSnapshot?.limits ?? [], feed: feedLimits, now: now)
     }
 
-    var geminiLimits: [UsageLimit] {
+    var antigravityLimits: [UsageLimit] {
         guard prefs.trackAntigravity, let antigravity else { return [] }
-        return UsageMerger.merge(api: antigravity.limits, feed: [], now: now).filter(AntigravityParser.isShown)
+        // Merge first so a model whose window has reset counts as 0%.
+        return AntigravityParser.summarize(UsageMerger.merge(api: antigravity.limits, feed: [], now: now))
     }
 
     var codexLimits: [UsageLimit] {
@@ -116,10 +124,10 @@ final class UsageStore {
     var cooldownUntil: Date? { FetchScheduler.inCooldown(fetchState, now: now) ? fetchState.cooldownUntil : nil }
     var canRefresh: Bool { !isLoading && !FetchScheduler.inCooldown(fetchState, now: Date()) }
 
-    // Gemini quota only moves while Antigravity runs, so a closed Antigravity
+    // Antigravity quota only moves while Antigravity runs, so a closed Antigravity
     // isn't stale data: it's the last reading, still true. Stale means
     // Antigravity is running and we've failed to read it for a while.
-    var isGeminiStale: Bool {
+    var isAntigravityStale: Bool {
         guard antigravityRunning, let fetched = antigravity?.fetchedAt else { return false }
         return now.timeIntervalSince(fetched) > 10 * 60
     }
@@ -127,7 +135,7 @@ final class UsageStore {
     var staleProviders: Set<Provider> {
         var s: Set<Provider> = []
         if isStale { s.insert(.claude) }
-        if isGeminiStale { s.insert(.antigravity) }
+        if isAntigravityStale { s.insert(.antigravity) }
         return s
     }
 
@@ -242,7 +250,7 @@ final class UsageStore {
         }
     }
 
-    // MARK: Gemini (Antigravity)
+    // MARK: Google (Antigravity)
 
     func refreshAntigravity() async {
         guard prefs.trackAntigravity, !system.isIdle else { return }
@@ -260,6 +268,8 @@ final class UsageStore {
             now = Date()
             dataChanged()
         } catch {
+            // Every failure past the "not running" check means it is running.
+            antigravityRunning = true
             antigravityError = error as? UsageError ?? .network(error.localizedDescription)
         }
     }

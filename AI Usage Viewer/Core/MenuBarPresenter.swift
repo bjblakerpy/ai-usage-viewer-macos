@@ -29,7 +29,7 @@ nonisolated struct MenuBarPresentation: Equatable, Sendable {
     var severity:        Severity
     var isStale:         Bool
     var tooltip:         String
-    // Whose limit is shown: picks the bars icon (Claude), sparkle (Gemini)
+    // Whose limit is shown: picks the bars icon (Claude), sparkle (Antigravity)
     // or prompt (Codex).
     var provider:        Provider = .claude
 }

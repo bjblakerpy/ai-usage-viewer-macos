@@ -1,7 +1,7 @@
 // AIUsageViewerApp.swift
 // AI Usage Viewer
 //
-// A menu-bar app that shows your AI plan usage (Claude, Gemini through
+// A menu-bar app that shows your AI plan usage (Claude, Google through
 // Antigravity, OpenAI through Codex) at a glance and warns you before you
 // run out. See README.md for how data flows in.
 
